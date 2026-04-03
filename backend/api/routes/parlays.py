@@ -30,6 +30,23 @@ def get_parlays(
     if not fixtures:
         return []
 
+    # Keep only current matchday fixtures per league.
+    # "Current matchday" = the lowest upcoming matchday for each competition.
+    from collections import defaultdict
+    _min_matchday: dict = {}
+    for f in fixtures:
+        code = f["competition_code"]
+        md = f.get("matchday")
+        if md is not None:
+            if code not in _min_matchday or md < _min_matchday[code]:
+                _min_matchday[code] = md
+
+    if _min_matchday:
+        fixtures = [
+            f for f in fixtures
+            if f.get("matchday") == _min_matchday.get(f["competition_code"])
+        ]
+
     fixture_map = {f["fixture_id"]: f for f in fixtures}
 
     # --- EV-based path: requires bookmaker odds ---

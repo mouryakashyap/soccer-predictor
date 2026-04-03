@@ -76,6 +76,7 @@ def fetch_upcoming_fixtures(days_ahead: int = 7) -> List[Dict]:
                 "league":           league_name,
                 "competition_code": code,
                 "season":           2025,
+                "matchday":         m.get("matchday"),
             })
     return fixtures
 

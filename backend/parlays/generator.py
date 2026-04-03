@@ -111,11 +111,10 @@ def generate_confidence_parlays(
     can handle both interchangeably.  Fields without meaning when no odds
     exist (decimal_odds, edge, combined_odds, expected_value) are set to 0.0.
     """
-    # Build candidate picks: one pick per fixture — the single highest-confidence
-    # outcome across all markets, provided it clears CONFIDENCE_THRESHOLD.
-    # One pick per fixture guarantees the one-leg-per-fixture constraint is
-    # always satisfied and keeps the candidate pool small (≤ num fixtures),
-    # which makes combination generation fast even for size-5 parlays.
+    # Build candidate picks: one pick per market per fixture (up to 3 per fixture).
+    # This gives a much larger and more varied pool than one-pick-per-fixture,
+    # which was the root cause of near-identical parlays.
+    # The one-leg-per-fixture constraint is still enforced during combo building.
     candidate_picks: List[Dict] = []
 
     for pred in predictions:
@@ -124,7 +123,6 @@ def generate_confidence_parlays(
             continue
 
         fixture = fixture_map.get(fixture_id, {})
-        best_pick = None
 
         for market, outcomes in _MARKETS:
             market_probs = pred.get(market)
@@ -137,79 +135,110 @@ def generate_confidence_parlays(
             if best_prob < CONFIDENCE_THRESHOLD:
                 continue
 
-            if best_pick is None or best_prob > best_pick["model_prob"]:
-                best_pick = {
-                    "fixture_id":   fixture_id,
-                    "market":       market,
-                    "outcome":      best_outcome,
-                    "model_prob":   best_prob,
-                    "decimal_odds": 0.0,
-                    "edge":         0.0,
-                    "home_team":    fixture.get("home_team", ""),
-                    "away_team":    fixture.get("away_team", ""),
-                    "league":       fixture.get("league", ""),
-                    "kickoff":      fixture.get("kickoff", ""),
-                }
-
-        if best_pick:
-            candidate_picks.append(best_pick)
+            candidate_picks.append({
+                "fixture_id":   fixture_id,
+                "market":       market,
+                "outcome":      best_outcome,
+                "model_prob":   best_prob,
+                "decimal_odds": 0.0,
+                "edge":         0.0,
+                "home_team":    fixture.get("home_team", ""),
+                "away_team":    fixture.get("away_team", ""),
+                "league":       fixture.get("league", ""),
+                "kickoff":      fixture.get("kickoff", ""),
+            })
 
     if len(candidate_picks) < MIN_PARLAY_SIZE:
         return []
 
     # Cap candidates to avoid combinatorial explosion.
-    # C(20, 7) ≈ 77K combinations — fast.  C(35, 7) ≈ 6.7M — too slow.
+    # C(20, 7) ≈ 77K — fast. C(35, 7) ≈ 6.7M — too slow.
     MAX_CANDIDATES = 20
-    candidate_picks.sort(key=lambda p: p["model_prob"], reverse=True)
-    candidate_picks = candidate_picks[:MAX_CANDIDATES]
-
-    parlays: List[Dict] = []
-    max_size = min(MAX_PARLAY_SIZE, len(candidate_picks))
-
-    for size in range(MIN_PARLAY_SIZE, max_size + 1):
-        for combo in combinations(candidate_picks, size):
-            # Enforce: at most one leg per fixture across all markets
-            fixture_ids = [pick["fixture_id"] for pick in combo]
-            if len(fixture_ids) != len(set(fixture_ids)):
-                continue
-
-            combined_prob = 1.0
-            for pick in combo:
-                combined_prob *= pick["model_prob"]
-            combined_prob = round(combined_prob, 6)
-
-            if combined_prob < MIN_PARLAY_PROB:
-                continue
-
-            parlays.append({
-                "size":           size,
-                "legs":           [
-                    {
-                        "fixture_id":   pick["fixture_id"],
-                        "market":       pick["market"],
-                        "outcome":      pick["outcome"],
-                        "model_prob":   pick["model_prob"],
-                        "decimal_odds": pick["decimal_odds"],
-                        "edge":         pick["edge"],
-                        "home_team":    pick["home_team"],
-                        "away_team":    pick["away_team"],
-                        "league":       pick["league"],
-                        "kickoff":      pick["kickoff"],
-                    }
-                    for pick in combo
-                ],
-                "combined_prob":  combined_prob,
-                "combined_odds":  0.0,   # not computable without real odds
-                "expected_value": 0.0,   # not computable without real odds
-            })
-
-    # Return top 3 per leg count so every size is represented,
-    # ordered by size ascending, then confidence descending within each size.
     N_PER_SIZE = 3
+    MIN_UNIQUE_FIXTURES = 2
+    # Each appearance of a fixture in a larger-size parlay reduces its effective
+    # probability by this amount, pushing smaller sizes toward fresh fixtures.
+    REUSE_PENALTY = 0.12
+
+    def _fixture_set(parlay: Dict) -> set:
+        return {leg["fixture_id"] for leg in parlay["legs"]}
+
+    def _build_parlay(combo: tuple) -> Dict:
+        combined_prob = 1.0
+        for pick in combo:
+            combined_prob *= pick["model_prob"]
+        return {
+            "size":           len(combo),
+            "legs":           [
+                {
+                    "fixture_id":   pick["fixture_id"],
+                    "market":       pick["market"],
+                    "outcome":      pick["outcome"],
+                    "model_prob":   pick["model_prob"],
+                    "decimal_odds": pick["decimal_odds"],
+                    "edge":         pick["edge"],
+                    "home_team":    pick["home_team"],
+                    "away_team":    pick["away_team"],
+                    "league":       pick["league"],
+                    "kickoff":      pick["kickoff"],
+                }
+                for pick in combo
+            ],
+            "combined_prob":  round(combined_prob, 6),
+            "combined_odds":  0.0,
+            "expected_value": 0.0,
+        }
+
+    # Process from largest to smallest. Fixtures that appear in larger-size
+    # parlays get a probability penalty so smaller sizes surface different combos.
     result: List[Dict] = []
-    for size in range(MIN_PARLAY_SIZE, MAX_PARLAY_SIZE + 1):
-        group = [p for p in parlays if p["size"] == size]
-        group.sort(key=lambda p: p["combined_prob"], reverse=True)
-        result.extend(group[:N_PER_SIZE])
+    fixture_usage: Dict[str, int] = {}  # fixture_id → appearances in larger parlays
+
+    for size in range(MAX_PARLAY_SIZE, MIN_PARLAY_SIZE - 1, -1):
+        # Re-rank candidates: penalize heavily reused fixtures
+        def _effective_prob(pick: Dict) -> float:
+            penalty = fixture_usage.get(pick["fixture_id"], 0) * REUSE_PENALTY
+            return max(pick["model_prob"] - penalty, 0.01)
+
+        scored = sorted(candidate_picks, key=_effective_prob, reverse=True)[:MAX_CANDIDATES]
+
+        if len(scored) < size:
+            continue
+
+        # Generate all valid combos for this size
+        size_parlays: List[Dict] = []
+        for combo in combinations(scored, size):
+            fids = [p["fixture_id"] for p in combo]
+            if len(fids) != len(set(fids)):
+                continue
+            parlay = _build_parlay(combo)
+            if parlay["combined_prob"] < MIN_PARLAY_PROB:
+                continue
+            size_parlays.append(parlay)
+
+        # Sort by true combined_prob (not penalized) and select diverse set
+        size_parlays.sort(key=lambda p: p["combined_prob"], reverse=True)
+        selected: List[Dict] = []
+        selected_fsets: List[set] = []
+        for candidate in size_parlays:
+            cset = _fixture_set(candidate)
+            diverse = all(
+                len(cset.symmetric_difference(s)) >= MIN_UNIQUE_FIXTURES * 2
+                for s in selected_fsets
+            )
+            if diverse:
+                selected.append(candidate)
+                selected_fsets.append(cset)
+            if len(selected) >= N_PER_SIZE:
+                break
+
+        result.extend(selected)
+
+        # Penalize selected fixtures so smaller sizes are pushed to use others
+        for parlay in selected:
+            for leg in parlay["legs"]:
+                fid = leg["fixture_id"]
+                fixture_usage[fid] = fixture_usage.get(fid, 0) + 1
+
     result.sort(key=lambda p: (p["size"], -p["combined_prob"]))
     return result
