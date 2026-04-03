@@ -1,0 +1,2 @@
+- [User Profile](user_profile.md) -- Soccer betting domain expert building prediction app, cares about calibration
+- [LLM Predictor Integration](project_llm_predictor.md) -- Claude replaces rule-based model with feature flag, implemented 2026-04-01

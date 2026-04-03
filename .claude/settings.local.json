@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:d[k] for k in ['scripts','dependencies','devDependencies'] if k in d}, indent=2\\)\\)\")",
+      "Bash(curl -s --request GET --url 'https://v3.football.api-sports.io/fixtures?league=39&season=2024&next=3&status=NS' --header 'x-apisports-key: cb7a9fee508993fa444e6a9d8bbc8686')",
+      "Bash(python3 -c ':*)",
+      "Bash(curl -s https://v3.football.api-sports.io/status --header 'x-apisports-key: cb7a9fee508993fa444e6a9d8bbc8686')",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s 'https://v3.football.api-sports.io/fixtures?league=39&season=2025&from=2026-04-02&to=2026-04-10' --header 'x-apisports-key: cb7a9fee508993fa444e6a9d8bbc8686')",
+      "Bash(curl -s 'https://v3.football.api-sports.io/teams?name=Manchester+City&league=39&season=2024' --header 'x-apisports-key: cb7a9fee508993fa444e6a9d8bbc8686')",
+      "Bash(curl -s 'https://v3.football.api-sports.io/teams/statistics?team=50&league=39&season=2024' --header 'x-apisports-key: cb7a9fee508993fa444e6a9d8bbc8686')",
+      "Bash(curl -s 'https://v3.football.api-sports.io/fixtures/headtohead?h2h=50-42&last=5' --header 'x-apisports-key: cb7a9fee508993fa444e6a9d8bbc8686')",
+      "Bash(curl -s 'https://v3.football.api-sports.io/fixtures/headtohead?h2h=50-42&season=2024' --header 'x-apisports-key: cb7a9fee508993fa444e6a9d8bbc8686')",
+      "Bash(curl -s --max-time 120 http://localhost:8000/predictions)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(f'{len\\(d\\)} predictions loaded'\\)\")",
+      "Bash(curl -s http://localhost:8000/parlays)",
+      "Bash(time curl:*)"
+    ]
+  }
+}
