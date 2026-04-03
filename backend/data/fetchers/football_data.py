@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
-from backend.config import FOOTBALL_DATA_KEY
+from backend.config import FOOTBALL_DATA_KEY, CURRENT_SEASON
 from backend.data.cache import ttl_cache
 
 BASE_URL = "https://api.football-data.org/v4"
@@ -75,7 +75,7 @@ def fetch_upcoming_fixtures(days_ahead: int = 7) -> List[Dict]:
                 "kickoff":          m["utcDate"],
                 "league":           league_name,
                 "competition_code": code,
-                "season":           2025,
+                "season":           CURRENT_SEASON,
                 "matchday":         m.get("matchday"),
             })
     return fixtures

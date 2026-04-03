@@ -3,7 +3,7 @@ interface Props {
 }
 
 export default function ValueBadge({ edge }: Props) {
-  if (edge >= 0.10) {
+  if (edge >= 0.1) {
     return (
       <span className="px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800">
         Strong +{(edge * 100).toFixed(1)}%

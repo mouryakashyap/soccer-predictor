@@ -71,7 +71,7 @@ API routes → frontend
 - FastAPI lifespan starts a daemon thread that pre-fetches fixtures/standings/season-matches for all 5 leagues (~35s). LLM predictions are warmed on the first `/predictions` request (~60s one-time).
 - `/parlays` checks `_is_prediction_cache_warm()` (non-empty LLM cache) and returns `[]` immediately if cold.
 
-**football-data.org fetcher** — `fetch_season_matches(code)` does triple duty from one cached response: H2H filtering, last-5 form, and BTTS/clean-sheet rates. Zero additional API calls per team beyond the 3 league-level fetches (fixtures + standings + season matches).
+**football-data.org fetcher** — `fetch_season_matches(code)` does triple duty from one cached response: H2H filtering, last-5 form, and BTTS/clean-sheet rates. Zero additional API calls per team beyond the 3 league-level fetches (fixtures + standings + season matches). Note: the fetcher rate-limits at 7s between leagues and auto-retries 429s with a 65s sleep — this can silently stall the startup warm thread.
 
 ### API routes
 | Endpoint | Description |
@@ -84,11 +84,12 @@ API routes → frontend
 | `GET /health` | Liveness check |
 
 ### Frontend structure
-- `src/api/client.ts` — all API calls + TypeScript types; single source of truth for shapes.
+- `src/api/client.ts` — all API calls + TypeScript types; single source of truth for shapes. Backend URL defaults to `http://localhost:8000`; override with `VITE_API_URL` env var.
 - `src/pages/Dashboard.tsx` — fetches `/predictions`, groups by **date first then league** (PL→PD→BL1→SA→FL1 within each date), sorted by kickoff time.
 - `src/pages/Parlays.tsx` — fetches `/parlays`, leg-count filter buttons (All / 4 / 5 / 6 / 7 leg), hides odds/EV columns when `decimal_odds === 0`.
 - `src/components/FixtureCard.tsx` — 1X2/O/U/BTTS probability grids + value bet rows.
 - `src/components/ValueBadge.tsx` — edge badge: green ≥10%, yellow ≥5%, gray otherwise.
+- `App.tsx` — SPA with client-side `useState` page switching (no React Router). Nav toggles between `dashboard` and `parlays` views.
 
 ## Configuration
 
