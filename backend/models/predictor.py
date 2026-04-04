@@ -73,12 +73,11 @@ def _predict_totals(features: Dict) -> Dict[str, float]:
 
 
 def _predict_btts(features: Dict) -> Dict[str, float]:
-    p_yes = _clamp(
-        features["btts_likelihood"]
-        - features["home_clean_sheet"] * 0.3
-        - features["away_clean_sheet"] * 0.3
-        + 0.05
-    )
+    xg_home = (features["home_goals_scored"] + features["away_goals_conceded"]) / 2
+    xg_away = (features["away_goals_scored"] + features["home_goals_conceded"]) / 2
+    p_home_scores = 1 - _poisson_cdf(xg_home, 0)
+    p_away_scores = 1 - _poisson_cdf(xg_away, 0)
+    p_yes = _clamp(p_home_scores * p_away_scores)
     return {
         "yes": round(p_yes, 4),
         "no":  round(1 - p_yes, 4),

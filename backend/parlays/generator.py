@@ -9,7 +9,7 @@ Rules:
   - Drop parlays where combined_prob < MIN_PARLAY_PROB
 
 Confidence fallback (when no odds are available):
-  - Build candidate picks from all market outcomes whose model_prob >= CONFIDENCE_THRESHOLD
+  - Build candidate picks from market outcomes with sufficient edge over base rate
   - Apply the same one-leg-per-fixture and size constraints
   - Rank by combined_probability descending (no EV possible without odds)
   - expected_value / combined_odds are set to 0.0 as sentinel values
@@ -21,7 +21,6 @@ from backend.config import (
     MAX_PARLAY_SIZE,
     MIN_PARLAY_SIZE,
     TOP_N_PARLAYS,
-    CONFIDENCE_THRESHOLD,
 )
 
 
@@ -117,6 +116,9 @@ def generate_confidence_parlays(
     # The one-leg-per-fixture constraint is still enforced during combo building.
     candidate_picks: List[Dict] = []
 
+    _MARKET_MIN_EDGE = {"h2h": 0.15, "totals": 0.10, "btts": 0.10}
+    _MARKET_BASE     = {"h2h": 0.333, "totals": 0.50, "btts": 0.50}
+
     for pred in predictions:
         fixture_id = pred.get("fixture_id")
         if not fixture_id:
@@ -132,7 +134,9 @@ def generate_confidence_parlays(
             best_outcome = max(outcomes, key=lambda o: market_probs.get(o, 0.0))
             best_prob = market_probs.get(best_outcome, 0.0)
 
-            if best_prob < CONFIDENCE_THRESHOLD:
+            base = _MARKET_BASE[market]
+            min_edge = _MARKET_MIN_EDGE[market]
+            if best_prob - base < min_edge:
                 continue
 
             candidate_picks.append({
